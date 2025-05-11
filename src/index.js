@@ -4,6 +4,14 @@ const { createWriteStream, existsSync } = require('fs');
 const { join } = require('path');
 const { Throttle } = require('stream-throttle');
 
+async function setQualityAndReload(page, quality) {
+    await page.evaluate((quality) => {
+        localStorage.setItem('pljsquality', quality);
+    }, quality);
+    
+    await page.reload({ waitUntil: 'domcontentloaded' });
+}
+
 function downloadFilm(url, quality, speedLimitMB) {
     return new Promise(async (resolve, reject) => {
         let foundedVideoURL = false;
@@ -14,6 +22,10 @@ function downloadFilm(url, quality, speedLimitMB) {
         await page.setRequestInterception(true);
 
         page.on('request', async (request) => {
+            if (foundedVideoURL) {
+                return;
+            }
+
             const requestURL = request.url();
 
             // Fast load without useless files and skip advertisement
@@ -28,20 +40,20 @@ function downloadFilm(url, quality, speedLimitMB) {
                 await browser.close();
 
                 resolve();
-                
+
                 request.abort();
             } else {
                 request.continue();
             }
         });
 
-        await page.evaluateOnNewDocument(() => {
-            localStorage.setItem('pljsquality', quality);
-        });
+        await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 35_000 });
+        console.log('Страница загружена!');
 
-        await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 40_000 });
+        await setQualityAndReload(page, quality);
+        console.log('Качество установлено, страница перезагружена');
 
-        await page.evaluate(() => {
+        await page.evaluate(async () => {
             const video = document.querySelector('video');
 
             if (video) {
@@ -52,7 +64,7 @@ function downloadFilm(url, quality, speedLimitMB) {
         setTimeout(() => {
             if (!foundedVideoURL) {
                 browser.close();
-                
+
                 reject(`Не удалось найти ссылку на видео. URL: ${url}`);
             }
         }, 60_000);
@@ -100,13 +112,24 @@ async function downloadWithProgress(response, writer, totalBytes, title, speedLi
     });
 
     return new Promise((resolve, reject) => {
-        writer.on('finish', resolve);
+        writer.on('finish', () => { 
+            resolve();
+        });
+
         writer.on('error', reject);
     });
 }
 
 function extractTitle(content) {
-    return (content.match(/<h1 itemprop="name">(.*?)<\/h1>/)[1]).replace(/["';:\/]/g, '');
+    try {
+        const title = (content.match(/<h1 itemprop="name">(.*?)<\/h1>/)[1]).replace(/["';:\/]/g, '');
+
+        return title;
+    } catch (error) {
+        const title = (content.match(/<div class="b-post__origtitle">(.*?)<\/div>/)[1]).replace(/["';:\/]/g, '');
+
+        return title;
+    }
 }
 
 function getUniqueFilePath(title) {
@@ -132,7 +155,97 @@ const urls = [
 */
 
 const urls = [
-    
+    // "https://rezka.ag/films/drama/1697-zodiak-2007.html",
+    // "https://rezka.ag/films/drama/10806-krid-nasledie-rokki-2015.html",
+    // "https://rezka.ag/films/thriller/78595-nastoyaschie-detektivy-2025.html",
+    // "https://rezka.ag/series/thriller/1967-chernyy-spisok-2013.html#t:111-s:1-e:1",
+
+    // "https://rezka-ua.in/series/adventures/53465-odni-iz-nas-2023-latest/111-hdrezka-studio/1-season/1-episode.html",
+
+    // "https://rezka.ag/series/drama/34048-bandy-londona-2020.html#t:355-s:1-e:1",
+
+    // "https://rezka.ag/films/action/1112-adrenalin-2006.html",
+    // "https://rezka.ag/films/action/47246-bystree-puli-2022.html",
+    // "https://rezka.ag/films/action/56394-tayler-reyk-operaciya-po-spaseniyu-2-2023.html",
+    // "https://rezka.ag/films/thriller/1372-gorod-vorov-2010.html",
+    // "https://rezka.ag/films/action/2923-ubit-billa-2003.html",
+    // "https://rezka.ag/films/detective/32580-dostat-nozhi-2019.html",
+    // "https://rezka.ag/films/detective/51890-dostat-nozhi-steklyannaya-lukovica-2022.html",
+    // "https://rezka.ag/films/action/10762-levsha-2015.html",
+    // "https://rezka.ag/films/action/57111-missiya-nevypolnima-smertelnaya-rasplata-chast-pervaya-2023.html",
+    // "https://rezka.ag/films/thriller/10803-shpionskiy-most-2015.html",
+    // "https://rezka.ag/films/action/703-temnyy-rycar-2008.html",
+    // "https://rezka.ag/films/action/67133-dedpul-i-rosomaha-2024.html",
+    // "https://rezka.ag/films/action/77796-opustoshenie-2025.html",
+    // "https://rezka.ag/films/action/75950-novokain-2025-latest.html",
+    // "https://rezka.ag/films/action/76772-master-2025.html",
+    // "https://rezka.ag/films/action/1488-chelovek-pauk-2-2004.html",
+    // "https://rezka.ag/films/action/1481-chelovek-pauk-2002.html",
+    // "https://rezka.ag/films/drama/786-sem-zhizney-2008.html",
+    // "https://rezka.ag/films/thriller/264-linkoln-dlya-advokata-2011.html",
+    // "https://rezka.ag/films/action/1560-robokop-1987.html",
+    // "https://rezka.ag/series/action/46126-dzhek-richer-2022.html#t:111-s:3-e:1",
+
+    // "https://rezka.ag/series/thriller/646-vo-vse-tyazhkie-2008.html#t:56-s:1-e:1",
+    // "https://rezka.ag/series/thriller/646-vo-vse-tyazhkie-2008.html#t:56-s:1-e:2",
+    "https://rezka.ag/series/thriller/646-vo-vse-tyazhkie-2008.html#t:56-s:1-e:3",
+    "https://rezka.ag/series/thriller/646-vo-vse-tyazhkie-2008.html#t:56-s:1-e:4",
+    "https://rezka.ag/series/thriller/646-vo-vse-tyazhkie-2008.html#t:56-s:1-e:5",
+    "https://rezka.ag/series/thriller/646-vo-vse-tyazhkie-2008.html#t:56-s:1-e:6",
+    "https://rezka.ag/series/thriller/646-vo-vse-tyazhkie-2008.html#t:56-s:1-e:7",
+
+    "https://rezka.ag/series/thriller/646-vo-vse-tyazhkie-2008.html#t:56-s:2-e:1",
+    "https://rezka.ag/series/thriller/646-vo-vse-tyazhkie-2008.html#t:56-s:2-e:2",
+    "https://rezka.ag/series/thriller/646-vo-vse-tyazhkie-2008.html#t:56-s:2-e:3",
+    "https://rezka.ag/series/thriller/646-vo-vse-tyazhkie-2008.html#t:56-s:2-e:4",
+    "https://rezka.ag/series/thriller/646-vo-vse-tyazhkie-2008.html#t:56-s:2-e:5",
+    "https://rezka.ag/series/thriller/646-vo-vse-tyazhkie-2008.html#t:56-s:2-e:6",
+    "https://rezka.ag/series/thriller/646-vo-vse-tyazhkie-2008.html#t:56-s:2-e:7",
+    "https://rezka.ag/series/thriller/646-vo-vse-tyazhkie-2008.html#t:56-s:2-e:8",
+    "https://rezka.ag/series/thriller/646-vo-vse-tyazhkie-2008.html#t:56-s:2-e:9",
+    "https://rezka.ag/series/thriller/646-vo-vse-tyazhkie-2008.html#t:56-s:2-e:10",
+    "https://rezka.ag/series/thriller/646-vo-vse-tyazhkie-2008.html#t:56-s:2-e:11",
+    "https://rezka.ag/series/thriller/646-vo-vse-tyazhkie-2008.html#t:56-s:2-e:12",
+    "https://rezka.ag/series/thriller/646-vo-vse-tyazhkie-2008.html#t:56-s:2-e:13",
+
+    "https://rezka.ag/series/thriller/646-vo-vse-tyazhkie-2008.html#t:56-s:3-e:1",
+    "https://rezka.ag/series/thriller/646-vo-vse-tyazhkie-2008.html#t:56-s:3-e:2",
+    "https://rezka.ag/series/thriller/646-vo-vse-tyazhkie-2008.html#t:56-s:3-e:3",
+    "https://rezka.ag/series/thriller/646-vo-vse-tyazhkie-2008.html#t:56-s:3-e:4",
+    "https://rezka.ag/series/thriller/646-vo-vse-tyazhkie-2008.html#t:56-s:3-e:5",
+    "https://rezka.ag/series/thriller/646-vo-vse-tyazhkie-2008.html#t:56-s:3-e:6",
+    "https://rezka.ag/series/thriller/646-vo-vse-tyazhkie-2008.html#t:56-s:3-e:7",
+    "https://rezka.ag/series/thriller/646-vo-vse-tyazhkie-2008.html#t:56-s:3-e:8",
+    "https://rezka.ag/series/thriller/646-vo-vse-tyazhkie-2008.html#t:56-s:3-e:9",
+    "https://rezka.ag/series/thriller/646-vo-vse-tyazhkie-2008.html#t:56-s:3-e:10",
+    "https://rezka.ag/series/thriller/646-vo-vse-tyazhkie-2008.html#t:56-s:3-e:11",
+    "https://rezka.ag/series/thriller/646-vo-vse-tyazhkie-2008.html#t:56-s:3-e:12",
+    "https://rezka.ag/series/thriller/646-vo-vse-tyazhkie-2008.html#t:56-s:3-e:13",
+
+    "https://rezka.ag/series/detective/33272-goryachaya-tochka-2019.html#t:110-s:1-e:1",
+    "https://rezka.ag/series/detective/33272-goryachaya-tochka-2019.html#t:110-s:1-e:2",
+    "https://rezka.ag/series/detective/33272-goryachaya-tochka-2019.html#t:110-s:1-e:3",
+    "https://rezka.ag/series/detective/33272-goryachaya-tochka-2019.html#t:110-s:1-e:4",
+    "https://rezka.ag/series/detective/33272-goryachaya-tochka-2019.html#t:110-s:1-e:5",
+    "https://rezka.ag/series/detective/33272-goryachaya-tochka-2019.html#t:110-s:1-e:6",
+    "https://rezka.ag/series/detective/33272-goryachaya-tochka-2019.html#t:110-s:1-e:7",
+    "https://rezka.ag/series/detective/33272-goryachaya-tochka-2019.html#t:110-s:1-e:8",
+    "https://rezka.ag/series/detective/33272-goryachaya-tochka-2019.html#t:110-s:1-e:9",
+    "https://rezka.ag/series/detective/33272-goryachaya-tochka-2019.html#t:110-s:1-e:10",
+    "https://rezka.ag/series/detective/33272-goryachaya-tochka-2019.html#t:110-s:1-e:11",
+    "https://rezka.ag/series/detective/33272-goryachaya-tochka-2019.html#t:110-s:1-e:12",
+    "https://rezka.ag/series/detective/33272-goryachaya-tochka-2019.html#t:110-s:1-e:13",
+    "https://rezka.ag/series/detective/33272-goryachaya-tochka-2019.html#t:110-s:1-e:14",
+    "https://rezka.ag/series/detective/33272-goryachaya-tochka-2019.html#t:110-s:1-e:15",
+    "https://rezka.ag/series/detective/33272-goryachaya-tochka-2019.html#t:110-s:1-e:16",
+    "https://rezka.ag/series/detective/33272-goryachaya-tochka-2019.html#t:110-s:1-e:17",
+    "https://rezka.ag/series/detective/33272-goryachaya-tochka-2019.html#t:110-s:1-e:18",
+    "https://rezka.ag/series/detective/33272-goryachaya-tochka-2019.html#t:110-s:1-e:19",
+    "https://rezka.ag/series/detective/33272-goryachaya-tochka-2019.html#t:110-s:1-e:20",
+    "https://rezka.ag/series/detective/33272-goryachaya-tochka-2019.html#t:110-s:1-e:21",
+    "https://rezka.ag/series/detective/33272-goryachaya-tochka-2019.html#t:110-s:1-e:22",
+    "https://rezka.ag/series/detective/33272-goryachaya-tochka-2019.html#t:110-s:1-e:23",
+    "https://rezka.ag/series/detective/33272-goryachaya-tochka-2019.html#t:110-s:1-e:24",
 ];
 
 const errorUrls = [];
@@ -141,7 +254,7 @@ let speedLimitMB = process.argv[3];
 
 (async () => {
     quality ??= "1080p";
-    speedLimitMB ??= 7;
+    speedLimitMB ??= 11;
 
     console.log(`-------PARAMS--------`);
     console.log(`Quality: ${quality} \r\nSpeed limit: ${speedLimitMB} MB/s`);
